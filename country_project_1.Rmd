@@ -1,0 +1,94 @@
+---
+title: "country_data"
+author: "Emmanuel Oluloto"
+date: "March 9, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("Stat2Data", lib.loc="~/R/win-library/3.4")
+library(lattice)      # For xy plot
+
+library(grid)    # For plot grids
+library(gridExtra)
+library(ggplot2)
+
+
+getwd()
+setwd("C:/Users/EmmaLotoPassy/Documents/R Prog")
+CountryData.df = read.csv("Countries.csv")
+attach(CountryData.df)
+```
+
+
+### QUESTION
+  What factors affect the literacy rate of a country?
+
+```{r}
+colnames(CountryData.df)
+
+cor(Population, Literacy)
+cor(Agriculture, NetMigration)
+cor(Agriculture, GDPPC)
+cor(Literacy, Agriculture)
+
+round(cor(cbind(GDPPC, Literacy, InfantMortality, Agriculture, Population, NetMigration)), 3)
+cor(Literacy, InfantMortality)
+
+xyplot(Literacy ~ InfantMortality, xlab = "Infant Mortality Rate", ylab = "Literacy Rate",  type=c("p", "r"))
+
+```
+
+
+## TESTING THE MODELS
+
+```{r}
+# BEST MODEL
+SimpleModel.lm = lm(Literacy ~ InfantMortality) 
+summary(SimpleModel.lm)
+hist(SimpleModel.lm$residuals, main = "Histogram of Residuals for Literacy ~ InfantMortality")
+
+
+qqnorm(SimpleModel.lm$residuals, SimpleModel.lm$fits)
+qqline(SimpleModel.lm$residuals)
+#######
+
+QuadModel.lm1 = lm(Literacy ~ InfantMortality + I(InfantMortality^2))
+summary(QuadModel.lm1)
+
+SimpleModel.lm2 = lm(Literacy ~ I(log(InfantMortality)) )
+summary(SimpleModel.lm2)
+
+QuadModel.lm2 = lm(Literacy ~ InfantMortality + I(InfantMortality^2) + Agriculture + I(Agriculture^2) + Agriculture:InfantMortality)
+summary(QuadModel.lm2)
+
+QuadModel.lm3 = lm(Literacy ~ InfantMortality + Agriculture + Agriculture:InfantMortality)
+summary(QuadModel.lm3)
+
+
+
+TestModel.lm1 = lm(Literacy ~ Agriculture)
+summary(TestModel.lm1)
+
+TestModel.lm2 = lm(Literacy ~ Agriculture + I(Agriculture^2))
+summary(TestModel.lm2)
+
+# Other Variables we were messing with
+TestModel.lm3 = lm(Agriculture ~ GDPPC)
+summary(TestModel.lm3)
+hist(TestModel.lm3$residuals, main = "Histogram of Residuals for Agriculture ~ GDPPC")
+
+TestModel.lm4 = lm(Agriculture ~ GDPPC + I(GDPPC^2))
+summary(TestModel.lm4)
+
+TestModel.lm5 = lm(Agriculture ~ GDPPC + NetMigration + I(GDPPC^2))
+summary(TestModel.lm5)
+
+```
+
+After testing a bunch of models, I felt like the reduced model conaining InfantMortality and Literacy only was the most useful, as other variables added have barely any effect on the r-squared values and have insignificant p-values.
+
+
+

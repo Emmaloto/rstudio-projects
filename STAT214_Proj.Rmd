@@ -1,0 +1,281 @@
+---
+title: "Stat 214 project"
+author: "Emmanuel Oluloto"
+date: "April 19, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(lattice)      # For xy plot
+library(mosaic)
+
+library(grid)    # For plot grids
+library(gridExtra)
+library(ggplot2)
+
+library(readr)
+library(taRifx)
+library(agricolae)
+library(lsmeans)
+
+Video_Games_Sales_as_at_22_Dec_2016 <- read_csv("~/R Prog/datasets/Video_Games_Sales_as_at_22_Dec_2016.csv")
+Original_Dataset = Video_Games_Sales_as_at_22_Dec_2016 
+
+Original_Dataset$Year_of_Release =  suppressWarnings(as.numeric(Original_Dataset$Year_of_Release)) 
+Original_Dataset$User_Score = suppressWarnings(as.numeric(Original_Dataset$User_Score))
+
+
+# No NAs at all
+GameSales_Clean.df = na.omit(Video_Games_Sales_as_at_22_Dec_2016)
+colnames(GameSales_Clean.df)
+
+```
+
+## DATASET
+
+I'm working with a table that contains stats for video game sales obtained from Kaggle : https://www.kaggle.com/rush4ratio/video-game-sales-with-ratings
+
+```{r c-list}
+colnames(GameSales_Clean.df)
+
+str(GameSales_Clean.df)
+```
+
+
+
+
+## Research Questions
+
+####  1. Regression Question  (EX - Q, RESP - Q)
+   How do game sales in Japan change over time, with respect to user score?  
+   
+   Explanatory - Year_of_Release, User_Score* (Quant)    
+   Response    - JP_Sales (millions)          (Quant)   
+
+MODEL: 
+$$Y = \beta_0 + \beta_1X_1 + \beta_2X_2 + \beta_3X_1^2 + \beta_4X_2^2 + \epsilon$$
+$$Y = \text{Game Sales in Japan}, X_1 = \text{Year of Release}, X_2 = \text{User Score}$$
+
+  I used an almost-complete second-order model (minus the interaction). I had to test a LOT of models to find the one that worked best. I decided not to factor in the User Count, as that made the model more complex while not really being significant.   
+
+
+```{r regression, echo=TRUE}
+
+analysis_1 <- Original_Dataset[!(Original_Dataset$Year_of_Release=="N/A"),]
+analysis_1 <- Original_Dataset[!(is.na(Original_Dataset$User_Score)),]
+#str(analysis_1)
+
+# Change year to numeric
+analysis_1$Year_of_Release =  as.numeric(analysis_1$Year_of_Release)
+attach(analysis_1)
+
+xyplot(JP_Sales ~ Year_of_Release, main="JP Sales vs Year", pch = 18)
+
+# Original Model
+JPSales.lm = lm(JP_Sales ~ Year_of_Release + User_Score + I(User_Score^2) + I(Year_of_Release^2)) 
+summary(JPSales.lm)
+
+
+#Assessing Model Conditions
+par(mfrow = c(2,2))
+hist(JPSales.lm$residuals, main=NULL)
+
+plot(JPSales.lm$fitted.values, JPSales.lm$residuals)
+abline(h=0)
+
+qqnorm(JPSales.lm$residuals, main=NULL)
+qqline(JPSales.lm$residuals)
+par(mfrow = c(1,1))
+
+
+# Transforming the data
+squrtJP = sqrt(JP_Sales)
+
+TransJP.lm = lm(squrtJP ~ Year_of_Release + User_Score + I(User_Score^2) + I(Year_of_Release^2))
+summary(TransJP.lm)
+
+xyplot(squrtJP ~ Year_of_Release, main="Sq-Root JP Sales vs Year", pch = 18)
+
+
+
+#Assessing Model Conditions Again
+par(mfrow = c(2,2))
+
+hist(TransJP.lm$residuals, main="Histogram of Residuals (Transform)")
+
+plot(TransJP.lm$fitted.values, TransJP.lm$residuals, main = "Fitted values vs Residuals (Transform)")
+abline(h=0)
+
+qqnorm(TransJP.lm$residuals, main="QQPlot (Transform)")
+qqline(TransJP.lm$residuals)
+par(mfrow = c(1,1))
+
+
+detach(analysis_1)
+```
+
+
+
+
+   Conclusion: The year of release and User Score of games do have a relationship with the number of sales in Japan. However, I cannot say this with complete certainty, as the model only explains 5.1% of the variability.
+
+    The model assumptions are also violated. My QQPlot with my original data shows more extreme values than we would expect at one of its ends. The Fits/Residuals plot is also clumped around a certain side of the zero line. I tried every transform on each one of the variables separately and together, and I saw that a square root transform of the Sales worked the best, as the histogram showed a slightly more normal distribution, and the Fits vs Residuals are also a bit more varied around zero. The assumptions were still not met though.
+
+
+
+
+
+
+####  2. ANOVA Question  (EX - C, RESP - Q)
+   How does the user score change with the game genre?
+   
+   Explanatory - Genre  
+   Response    - User_Score 
+
+
+
+There are more than 2 groups (about 12 levels), so a two-sampled t-test does not work out for us.
+An ANOVA test would be appropriate!
+
+MODEL: 
+$$Y = \mu + \alpha_i  + \epsilon$$
+$$Y = \text{User Score}, \alpha_i = \text{Genre Group Effect}$$
+
+
+```{r ANOVA, echo=TRUE}
+analysis_2 <- Original_Dataset[!(is.na(Original_Dataset$User_Score)),]
+
+# Use Genre as Factor
+analysis_2$Genre <- as.factor(analysis_2$Genre) 
+analysis_2$Developer <- as.character(analysis_2$Developer) 
+analysis_2$Rating <- as.factor(analysis_2$Rating) 
+
+attach(analysis_2)
+levels(Genre)
+levels(Rating)
+
+xyplot(User_Score ~ Genre, main="User Scores vs Genre", pch=16)
+
+
+UserScore.aov = aov(User_Score ~ Genre)
+summary(UserScore.aov)
+
+
+### Check Model Assumptions ###
+par(mfrow = c(2,2))
+hist(UserScore.aov$residuals)
+
+plot(UserScore.aov$fitted.values, UserScore.aov$residuals, main = "Fitted values vs Residuals")
+abline(h=0)
+
+qqnorm(UserScore.aov$residuals, main = "QQPlot Original")
+qqline(UserScore.aov$residuals)
+par(mfrow = c(1,1))
+
+
+# Transformation
+score_sq = User_Score^2
+TransUserScore.aov = aov(score_sq ~ Genre)
+
+par(mfrow = c(2,2))
+hist(TransUserScore.aov$residuals)
+plot(TransUserScore.aov$fitted.values, TransUserScore.aov$residuals, main = "(Square) Fitted values vs Residuals")
+abline(h=0)
+qqnorm(TransUserScore.aov$residuals, main = "(Square) QQPlot for Transform")
+qqline(TransUserScore.aov$residuals)
+par(mfrow = c(1,1))
+
+
+summary(TransUserScore.aov)
+
+```
+
+
+
+We know that the User Scores vary significantly with each group, but how are the groups different?
+
+
+```{r}
+# Which groups are significantly different?
+#FisherTest - LSD.test(Response, Explanatory, df-resid, meansq-resid)
+fisher <- LSD.test(score_sq, Genre, 7578, 349)
+fisher
+
+# Tukey
+TukeyHSD(TransUserScore.aov)
+
+
+detach(analysis_2)
+```
+
+Conclusion: User Scores do vary by game genre. The relationship from the Fisher's test can be summarized below.
+
++---------------+--------------+--------------+------+
+|     A         |       B      |       C      | D    |
++===============+==============+==============+======+
+| Role-Playing  | Strategy     | Puzzle       | Misc | 
++---------------+--------------+--------------+------+
+|               | Platform     | Adventure    |      |
++---------------+--------------+--------------+------+
+|               | Fighting     | Simulation   |      |
++---------------+--------------+--------------+------+
+|               | Adventure    | Racing       |      |
++---------------+--------------+--------------+------+
+|               | Simulation   | Shooter      |      | 
++---------------+--------------+--------------+------+
+|               | Puzzle       | Action       |      |
++---------------+--------------+--------------+------+
+|               |              | Sports       |      | 
++---------------+--------------+--------------+------+
+
+The model assumptions are not extremely well met, as the histogram does not show a very normal plot, and the QQPlot shows more extreme deviations than we would expect from a normal distribution at its ends. Transforming the data by squaring the User Score only helped a little. 
+
+
+
+
+####  3. Logistic Regression Question  (EX - Q, RESP - C)
+   Do critics give games different scores change before and after 2010?
+   Is a highly critiqued game more likely to be before or after 2010?
+   
+   Explanatory - Critic Score  
+   Response    - Before and After 2010  
+
+MODEL: 
+$$\pi = \frac {e^{\beta_0 + \beta_1X }} {1 + e^{\beta_0 + \beta_1X }}$$
+$$\pi = \text{P(1), Probability that game was made after 2010}, X = \text{Critic score}$$
+
+```{r logistic, echo=TRUE}
+year = as.factor(analysis_2$Year_of_Release)
+levels(year)
+table(year)
+
+
+After2010 = as.numeric(analysis_2$Year_of_Release > 2010) # 0 : <= 2010, 1 : > 2010 
+analysis_3 = analysis_2
+analysis_3$After2010 = After2010
+attach(analysis_3)
+
+YearMade.lm = lm(After2010 ~ Critic_Score)
+summary(YearMade.lm)
+
+plot(After2010 ~ Critic_Score, data = analysis_3)
+abline(YearMade.lm)
+
+
+# Using a General Linear Model
+YearGen.glm = glm(After2010 ~ Critic_Score, family=binomial, data = analysis_3)
+summary(YearGen.glm)
+
+b0 = YearGen.glm$coefficients[1] # intercept
+b1 = YearGen.glm$coefficients[2] # slope
+plot(analysis_3$Critic_Score, jitter(analysis_3$After2010,amount=.05),ylab="After 2010")
+curve(exp(b0+b1*x)/(1+exp(b0+b1*x)),add=T,col="red")
+title(main="Data & Predicted Values from Logistic Regression Model")
+
+
+
+```
+
+
+Conclusion: The critic score is a good predictor of the probability that the game was made at a certain time period.
+Looking at the plot from the general linear model, we can see that the probability of a game being made after 2010 increases with a better critic score.
