@@ -1,0 +1,325 @@
+---
+title: "college_rankings"
+output: html_document
+author: "Emmanuel Oluloto"
+---
+
+<style>
+.button {
+  font: bold 11px Arial;
+  text-decoration: none;
+  background-color: #EEEEEE;
+  color: #333333;
+  padding: 2px 6px 2px 6px;
+  border-top: 1px solid #CCCCCC;
+  border-right: 1px solid #333333;
+  border-bottom: 1px solid #333333;
+  border-left: 1px solid #CCCCCC;
+}
+</style>
+
+<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css"> 
+
+
+# Analysis of US College Rankings
+
+##  Datasets and References
+<a href="https://data.world/education/university-rankings-2017" class="w3-btn w3-ripple w3-deep-purple"> Data Source 1 </a>    
+
+<a href="http://andyreiter.com/datasets/" class="w3-btn w3-ripple w3-blue"> Data Source 2 </a>  
+
+<a href="http://r4ds.had.co.nz/transform.html" class="w3-btn w3-ripple w3-green"> TextBook </a>
+
+
+<a href="http://r-statistics.co/Top50-Ggplot2-Visualizations-MasterList-R-Code.html" class="w3-btn w3-ripple w3-red"> 
+Plot List </a>
+
+
+```{r dataImport, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(modelr)
+library(readr)
+
+library(lattice)
+library(mosaic)
+library(dplyr)
+National_Universities_Rankings <- read_csv("National Universities Rankings.csv")
+
+
+```
+
+
+## Introduction
+  College ranking sites such as U.S. News and Niche claim to have links that accurately rank colleges based on certain qualities and characteristics of the college. These sites believe that these variables measured can be used to scale the quality of higher educational institutions. The variables that U.S. News use are stated below
+  
+#### U.S News Rankings Variables
+<p style="border:3px; border-style:solid; border-color:#FF0000; padding: 1em;">
+For display purposes, we group these measures into the following indicators: <b> outcomes, faculty resources, 
+expert opinion, financial resources, student excellence and alumni giving. </b>
+</p>
+  
+  However, a lot of the high-ranked colleges in these ranking lists are typically very expensive, and thus not affordable for a large part of the population. The affordability of a school does not really seem to be considered in the ranking models that U.S News uses.   
+
+  For my study, I decided to see if the higher-ranked colleges in U.S News college rankings were schools that were simply more expensive, as less students being unable to pay for a college should be a negative factor. 
+I also observed how changes in college rankings between years differed between higher and lower ranked schools.
+
+
+
+
+
+## Clean-Up
+
+Let's clean up our data. There is a lot of missing data, and we need to generate some derived columns from the dataset.
+
+```{r cleanup}
+
+#str(National_Universities_Rankings)
+
+# Tuition (Quantitative variable)
+National_Universities_Rankings$Tuition = 
+  as.numeric(gsub("[^0-9]", "", National_Universities_Rankings$`Tuition and fees`))
+
+# State
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+National_Universities_Rankings$State <- substrRight(National_Universities_Rankings$Location, 2)
+#View(National_Universities_Rankings)
+
+National_Universities_Rankings$HasGreek = grepl("Greek", National_Universities_Rankings$Description)
+
+attach(National_Universities_Rankings)
+```
+
+
+## How is the school ranking affected by college tuition rates?
+
+We're looking for how tuition price affects the school ranking. We will explore other variables available in the dataset when we build our model.
+
+```{r plots}
+ggplot(data = National_Universities_Rankings) + 
+  geom_point(mapping = aes(x = Tuition, y = Rank, color=`Undergrad Enrollment`)) +
+  labs(title="College Rankings vs Tuition Rates of Top 200 schools")
+```
+
+From the graph, it looks like better ranked colleges are also the most expensive schools. Thus higher rankings have a correlation with higher tuition charged.
+
+It looks like some of the cheaper schools have the highest enrollment rates (bright blue spots), thus more students go to those. However, there are very few of these colleges in the list of 231 schools, and very few of them in the list have high rankings.
+
+Price having a positive relation with rankings makes sense, as colleges able to pay for better programs and resources when students pay more money. However, having more resources does not necessarily mean a better college experience, especially when the cost of the best colleges are so high.
+According to [NEA Today](http://neatoday.org/2015/08/17/who-can-afford-a-college-degree-today/), 
+<p style="border:3px; border-style:solid; border-color:#000000; padding: 1em;">
+A moderate budget for a student attending an in-state, four-year public university was <b>$23,410 </b> last year, according to the College Board. 
+</p>
+
+Let's see how many of these highly ranked colleges are less than or equal to this price.
+```{r afford_tuition}
+ggplot(data = National_Universities_Rankings) + 
+  geom_point(mapping = aes(x = Tuition, y = Rank, color=Tuition <= 23410)) +
+  labs(title="College Rankings vs Tuition Rates grouped by Relationship to Average Income", 
+       subtitle="Source:https://data.world/education/university-rankings-2017") +
+  geom_vline(xintercept=23410, size = 1.05, color="purple")
+```
+There is a very small number of these schools that can be afforded by the average student, yet these seem to be the lowest ranked schools.
+
+
+## Are rankings related to enrollment?
+We have seen a possible relationship between ranking and student enrollment/campus size.  If rankings determine how many students enroll in the university, more prospective students end up applying to higher-ranked schools and less to lower-ranked schools, which may end up creating a feedback loop (less graduating students means lower rankings, and so on).
+
+Let's look at how these rankings affect the student enrollment rate/campus size. Let's also look at what tuition rates are the most prevalent in this list of ```r nrow(National_Universities_Rankings)``` top schools. 
+To see overall relationships more clearly, we will be grouping the enrollment rates into 4 categories: * Small, Medium, Large and Huge *.
+
+```{r enroll}
+# Enrollment vs Rank
+ggplot(data = National_Universities_Rankings) + 
+  geom_point(mapping = aes(x = Rank, y = `Undergrad Enrollment`, alpha = Rank))
+
+### Group campus sizes as categorical variables 
+und_range = range(`Undergrad Enrollment`)
+cutoff <- seq (from=und_range[1], to=und_range[2], length=5)
+undergrad <- `Undergrad Enrollment`
+
+National_Universities_Rankings$Campus_Size <- cut(undergrad, breaks = c(-Inf, cutoff[2], cutoff[3], cutoff[4], Inf), 
+                        labels = c("Small", "Medium", "Large", "Huge"))
+
+# Frequency of school sizes
+bar_campus = ggplot(data = National_Universities_Rankings) + 
+  geom_bar(mapping = aes(x = Campus_Size, fill = Campus_Size), width = 1)
+
+bar_campus + labs(title="Frequency Chart of Campus Sizes in list of Top 200 Colleges")
+
+
+
+```
+From the point plot, we can see that most highly ranked schools have small undergraduate bodies, and as the rankings get lower there is more variability in the undergraduate size.   
+
+
+We can see from the bar chart that most of the schools in the top 200 have very small campus sizes. The highest ranked schools are concentrated around low undergraduate enrollment.  It's worth noting that the colleges with higher ranks have less people who enroll, and this implies that top colleges are more selective.     
+
+
+  We can see from these graphs that not only do top schools generally have high tuition, but also smaller class bodies. This makes sense, as less people are able to pay for more expensive colleges. However, this also means that top colleges are able to educate less people overall, while lower-ranked colleges become accessible to more people, a lot of who most likely are in need of financial assistance and growth. Thus, lower-ranked schools are accessible to the people who need them most.
+
+
+## Other Factors
+Let's see what other factors in our dataset also have an effect on the rankings.
+
+### Greek Life
+Let's see how the schools affiliation with Greek life has an effect on how many students enroll.
+
+```{r greek}
+National_Universities_Rankings$Approx_Tuition = round(National_Universities_Rankings$Tuition, -3)
+# Bar graph
+ggplot(data = National_Universities_Rankings) + 
+  geom_bar(mapping = aes(x = Approx_Tuition, color = HasGreek))
+
+# Point plot
+ggplot(data = National_Universities_Rankings) + 
+  geom_point(mapping = aes(x = Rank, y = Tuition, shape = HasGreek, color = HasGreek))
+```
+
+From the bar chart, the proportion of schools that have Greek Life listed for each price seems to be pretty varied throughout the high and low prices. 
+
+From the point chart, the schools that have significant Greek life activities (or at least advertise them) seem to be as distributed over ranks and enrollment as the ones who don't. Both types of schools tend to be more expensive with a higher rank (although majority of the most expensive schools have Greek life).
+
+
+### Geographical State 
+We can also see how the tuition varies by the states that the colleges are located in.
+```{r states}
+ggplot(data = National_Universities_Rankings) + 
+  geom_point(mapping = aes(x = Tuition, y = Rank, color=State)) +
+  labs(title="College Rankings vs Tuition Rates of Top 200 schools")
+
+
+# Tuition higher in certain states?
+count_state = as.data.frame(table(National_Universities_Rankings$State))
+
+lollipop <- ggplot(count_state, aes(x=count_state$Var1, y=count_state$Freq, color = count_state$Freq)) + 
+  geom_point(size=3) + 
+  geom_segment(aes(x=count_state$Var1, 
+                   xend=count_state$Var1, 
+                   y=0, 
+                   yend=count_state$Freq)) +  
+  labs(title="Lollipop Chart of State Frequency in Top 200 ranked schools", 
+       subtitle="Source:https://data.world/education/university-rankings-2017", 
+       color="School Count in State")  + xlab("State") + ylab("Frequency") 
+
+
+lollipop + theme(axis.text.x = element_text(angle=90, vjust=0.6))
+
+#lollipop + scale_fill_discrete(name = "School Count in State")
+
+
+```
+The states seem spread out across rankings according to the rankings vs tuition plot. Thus state does not  seem to have a strong relationship with the ranking of the schools.
+
+Alternatively, from the lollipop chart, the top 231 schools do seem to be mostly situated in certain states. The top states with the highest number of "top" schools are California (CA), Massachusetts (MA) and New York (NY). According to [CNBC](https://www.cnbc.com/2018/06/28/these-are-americas-most-expensive-states-to-live-in-for-2018.html),  
+these are some of the most expensive states in the U.S.
+
+
+
+## Model
+For our model, we will use Tuition and Undergraduate enrollment as the predictor variables in our model.
+
+```{r twoVar_linear_model}
+TwoLinearModel.lm = lm(Rank ~ Tuition + `Undergrad Enrollment`)
+model_summary = msummary(TwoLinearModel.lm)
+model_summary
+
+# Check how residuals behave
+hist(TwoLinearModel.lm$residuals)
+
+# Graph with line
+ggplot(data = National_Universities_Rankings) + 
+  geom_point(mapping = aes(x = Tuition, y = Rank, alpha = `Undergrad Enrollment`)) +
+  geom_abline(intercept  = TwoLinearModel.lm$coefficients[1], slope = TwoLinearModel.lm$coefficients[2], color = "grey", size = 1.2)
+```
+
+The undergraduate enrollment and tuition rate variables have significant p-values (significance defined as when p-value is approximately zero), thus these two variables can be used to predict the ranking. By plotting the line (intercept and slope values) yielded by our model on the graph, we can see that the line is a good fit with the data points plotted.
+  The residuals also have a pretty normal distribution, which means the difference between our predicted and actual values are pretty close to zero. We have an r-squared value of 0.6261, which means 60% of the variability in rankings can be explained by the variables considered in our model.
+
+
+## Comparing Rankings of Certain Schools 
+We would also like to see if schools that are always regarded as being high quality by society have less change in rankings than schools with less notoriety. This could reveal that a lot of the highest ranked schools stay that way because of past assumptions, while schools with no initial assumed rankings tend to have lower fluctuating rankings.
+
+
+We will be looking at 2 groups of 10 schools each from relatively high and low rankings from 2012 to 2019.
+```{r get_schools}
+US_News_Rankings_Liberal_Arts_Colleges_Through_2019 <-
+ read_csv("US-News-Rankings-Liberal-Arts-Colleges-Through-2019.csv", skip = 1)
+
+US_News_Year_Rankings <- 
+  select(US_News_Rankings_Liberal_Arts_Colleges_Through_2019, `College Name`, `2012`:`2019`) %>%
+  na.omit() 
+
+SampleSchools.df <- US_News_Year_Rankings[c(1:10, 101:110),]
+
+HighRanks <- SampleSchools.df[1:10,]
+LowRanks <- SampleSchools.df[c(11:nrow(SampleSchools.df)),]
+
+# Convert to wide format
+HighRanks <- gather(HighRanks,"Year", "Rank",  2:ncol(HighRanks))
+LowRanks <- gather(LowRanks,"Year", "Rank",  2:ncol(LowRanks))
+
+
+ggplot(data = HighRanks, aes(x=Year, y=as.numeric(Rank) )) + 
+  geom_line(aes(color = `College Name`, group = `College Name`), size=1.2) +
+    labs(title="Time Graphs depicting ranking changes for 10 top ranked schools", 
+       subtitle="Source:http://andyreiter.com/datasets/")  + ylab("Rank") 
+
+
+ggplot(data = LowRanks, aes(x=Year, y=as.numeric(Rank) )) + 
+  geom_line(aes(color = `College Name`, group = `College Name`), size=1.2) +
+    labs(title="Time Graphs depicting ranking changes for 10 lower ranked schools", 
+       subtitle="Source:http://andyreiter.com/datasets/")  + ylab("Rank") 
+```
+
+
+We can see that there is a LOT more variability in the lower-ranked schools than the higher ranked. This gives the idea that for lower-ranked colleges, the rankings are somewhat arbitrary, as they can move several points up or down compared to higher ranked colleges. This also means that a big part of the ranking process is simply reputation, general assumptions and past year rankings (for example, Amherst will usually remain in the top 5 because it is assumed to be high quality and has always gotten high rankings in past years).
+
+
+
+Conclusion:
+Even though we can predict the rankings using school costs with a decent amount of accuracy, this does not mean that the U.S. News site lies about their variables. However, this demonstrates that generating rankings using the indicators they chose generally has the sum effect of ranking colleges by tuition cost. A college that charges more has better resources for its students, but that does not mean that it is necessarily a better choice for everyone. A lot of people (especially those of lower income) will appreciate an affordable school with a decent program. A prospective student should opt for doing personal research and talking to alumni of colleges who were in similar conditions as they are currently in.
+
+In summary, the ranking lists can be useful, but should not be followed religiously.
+
+
+Conclusion: The critic score is a good predictor of the probability that the game was made at a certain time period.
+Looking at the plot from the general linear model, we can see that the probability of a game being made after 2010 increases with a better critic score.
+
+
+
+
+
+
+
+
+
+<style>
+
+hr {
+	border-top: 4px double #8c8b8b;
+	text-align: center;
+}
+
+hr:after {
+	content: '&#8711';	
+	display: inline-block;
+	position: relative;
+	top: -15px;
+	padding: 0 10px;
+	background: #f0f0f0;
+	color: #8c8b8b;
+	font-size: 18px;
+}
+</style>
+
+<hr>
+
+To see the R code that generated this webpage, you can see it at my Github page:
+
+<a href="https://github.com/Emmaloto/rstudio-projects" class="w3-btn w3-ripple w3-indigo"> See Code on Github </a>  
+
+
+<a href="https://icyblaze16.wixsite.com/emmaloto/programming-projects" class="w3-btn w3-ripple w3-teal"> My Website </a> 
